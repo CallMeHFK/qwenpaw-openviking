@@ -1,5 +1,7 @@
 # qwenpaw-openviking
 
+English | [简体中文](README.zh-CN.md)
+
 [![CI](https://github.com/CallMeHFK/qwenpaw-openviking/actions/workflows/ci.yml/badge.svg)](https://github.com/CallMeHFK/qwenpaw-openviking/actions)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
@@ -99,36 +101,3 @@ Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the dev
 [AGPL-3.0](LICENSE). The skills under `skills/` and the credential/transport logic are adapted from [volcengine/OpenViking](https://github.com/volcengine/OpenViking) (AGPL-3.0); this project keeps the same license. Thanks to the OpenViking authors at Volcengine.
 
 Author: [CallMeHFK](https://github.com/CallMeHFK)
-
----
-
-## 简体中文
-
-### 这是什么
-
-QwenPaw 插件，接入火山引擎开源的 agent 长期语义记忆引擎 [OpenViking](https://github.com/volcengine/OpenViking)。把上游 `agent-plugins`（Agent Plugins 1.0，Node stdio MCP proxy）移植为 QwenPaw 原生插件：纯 Python 标准库实现（3.12+），零第三方依赖，不需要 Node 运行时。
-
-安装时注册 7 个 `openviking_*` 工具、5 个技能（召回→工作→沉淀循环）、一个 startup 健康检查 hook。所有失败路径都以结构化错误字符串返回给模型，绝不把异常抛进 QwenPaw 宿主。
-
-### 安装
-
-需要一个可达的 OpenViking server（默认 `http://127.0.0.1:1933`）。用 release zip 热装（无需重启 QwenPaw）：
-
-```bash
-curl -X POST http://127.0.0.1:19999/api/plugins/install \
-  -H 'Content-Type: application/json' \
-  -d '{"source": "https://github.com/CallMeHFK/qwenpaw-openviking/releases/latest/download/openviking-memory-0.1.0.zip"}'
-```
-
-或把本仓库放入 `~/.qwenpaw/plugins/openviking-memory/` 后从该路径安装。
-
-### 配置
-
-凭证解析链（优先级从高到低，与上游 `ov` CLI 一致）：
-
-1. 环境变量：`OPENVIKING_URL`（或 `OPENVIKING_BASE_URL`）、`OPENVIKING_API_KEY`（或 `OPENVIKING_BEARER_TOKEN`）、`OPENVIKING_ACCOUNT`、`OPENVIKING_USER`、`OPENVIKING_PEER_ID`
-2. `~/.openviking/ovcli.conf`（含 `plugin.qwenpaw` 覆盖节）
-3. `~/.openviking/ov.conf`（`qwenpaw` 节，然后 `server` 节）
-4. 默认值：`http://127.0.0.1:1933`，无鉴权（本地模式）
-
-其他环境变量：`OPENVIKING_CREDENTIAL_SOURCE`（固定凭证来源）、`OPENVIKING_TIMEOUT_MS`（超时毫秒，默认 15000）、`OPENVIKING_DEBUG`（调试日志，写入 `~/.openviking/logs/qwenpaw.log`）。
