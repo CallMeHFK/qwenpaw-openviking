@@ -5,6 +5,7 @@ __pycache__/
 .venv/
 venv/
 env/
+.env
 
 dist/
 build/
@@ -12,5 +13,9 @@ build/
 
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
+.qoder/
 .DS_Store

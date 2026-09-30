@@ -53,7 +53,11 @@ def init_response(session="sess-1", protocol="2025-06-18"):
     )
 
 
-CFG = {"mcp_url": "http://ov.test/mcp", "api_key": "k", "user_agent": "openviking-memory-qwenpaw/0.1.0"}
+CFG = {
+    "mcp_url": "http://ov.test/mcp",
+    "api_key": "k",
+    "user_agent": "openviking-memory-qwenpaw/0.1.0",
+}
 
 
 class ParseSseTest(unittest.TestCase):
@@ -102,7 +106,10 @@ class CallToolTest(unittest.TestCase):
         self.assertEqual(urlopen.calls[-1].headers.get("Mcp-session-id"), "sess-1")
 
     def test_sse_response(self):
-        sse = 'data: {"jsonrpc":"2.0","id":"qwenpaw-2","result":{"content":[{"type":"text","text":"ok"}]}}\n\n'
+        sse = (
+            'data: {"jsonrpc":"2.0","id":"qwenpaw-2",'
+            '"result":{"content":[{"type":"text","text":"ok"}]}}\n\n'
+        )
         urlopen = make_urlopen([
             init_response(),
             FakeResponse({}),
@@ -128,19 +135,25 @@ class CallToolTest(unittest.TestCase):
 
     def test_auth_error_not_retried(self):
         urlopen = make_urlopen([
-            urllib.error.HTTPError("http://ov.test/mcp", 401, "Unauthorized", {},
-                                   io.BytesIO(b'{"error": {"message": "bad key"}}')),
+            urllib.error.HTTPError(
+                "http://ov.test/mcp", 401, "Unauthorized", {},
+                io.BytesIO(b'{"error": {"message": "bad key"}}'),
+            ),
         ])
-        with mock.patch.object(mcp_client.urllib.request, "urlopen", urlopen):
-            with self.assertRaises(mcp_client.McpAuthError):
-                McpClient(CFG).call_tool("find", {"query": "q"})
+        with (
+            mock.patch.object(mcp_client.urllib.request, "urlopen", urlopen),
+            self.assertRaises(mcp_client.McpAuthError),
+        ):
+            McpClient(CFG).call_tool("find", {"query": "q"})
         self.assertEqual(len(urlopen.calls), 1)
 
     def test_connection_refused(self):
         urlopen = make_urlopen([urllib.error.URLError("Connection refused")])
-        with mock.patch.object(mcp_client.urllib.request, "urlopen", urlopen):
-            with self.assertRaises(mcp_client.McpConnectionError):
-                McpClient(CFG).call_tool("find", {"query": "q"})
+        with (
+            mock.patch.object(mcp_client.urllib.request, "urlopen", urlopen),
+            self.assertRaises(mcp_client.McpConnectionError),
+        ):
+            McpClient(CFG).call_tool("find", {"query": "q"})
 
     def test_jsonrpc_error_raises_protocol_error(self):
         urlopen = make_urlopen([
@@ -149,9 +162,11 @@ class CallToolTest(unittest.TestCase):
             FakeResponse({"jsonrpc": "2.0", "id": "qwenpaw-2",
                           "error": {"code": -32602, "message": "unknown tool"}}),
         ])
-        with mock.patch.object(mcp_client.urllib.request, "urlopen", urlopen):
-            with self.assertRaises(mcp_client.McpProtocolError):
-                McpClient(CFG).call_tool("nope", {})
+        with (
+            mock.patch.object(mcp_client.urllib.request, "urlopen", urlopen),
+            self.assertRaises(mcp_client.McpProtocolError),
+        ):
+            McpClient(CFG).call_tool("nope", {})
 
 
 if __name__ == "__main__":

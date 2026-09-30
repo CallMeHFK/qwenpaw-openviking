@@ -85,7 +85,11 @@ def _unwrap(result):
     texts = []
     if isinstance(content, list):
         for block in content:
-            if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
+            if (
+                isinstance(block, dict)
+                and block.get("type") == "text"
+                and isinstance(block.get("text"), str)
+            ):
                 texts.append(block["text"])
     body = "\n".join(t for t in texts if t)
     if not body:
@@ -99,7 +103,9 @@ def _call(tool_name, arguments):
     try:
         return _unwrap(_get_client().call_tool(tool_name, arguments))
     except Exception as exc:  # never propagate into the host runtime
-        return _error_string(exc) if isinstance(exc, OpenVikingError) else f"OpenViking error: {exc}"
+        if isinstance(exc, OpenVikingError):
+            return _error_string(exc)
+        return f"OpenViking error: {exc}"
 
 
 def _clean(arguments):
@@ -115,7 +121,9 @@ def openviking_find(query: str, target_uri: str = "", limit: int = 10) -> str:
     return _call("find", _clean({"query": query, "target_uri": target_uri, "limit": limit}))
 
 
-def openviking_search(query: str, target_uri: str = "", limit: int = 10, session_id: str = "") -> str:
+def openviking_search(
+    query: str, target_uri: str = "", limit: int = 10, session_id: str = ""
+) -> str:
     """Deeper intent-aware search over OpenViking memory (optionally session-scoped)."""
     return _call("search", _clean({
         "query": query, "target_uri": target_uri, "limit": limit, "session_id": session_id,
@@ -142,7 +150,9 @@ def openviking_write(uri: str, content: str) -> str:
     return _call("write", {"uri": uri, "content": content})
 
 
-def openviking_add_skill(name: str = "", content: str = "", path: str = "", target_uri: str = "") -> str:
+def openviking_add_skill(
+    name: str = "", content: str = "", path: str = "", target_uri: str = ""
+) -> str:
     """Install an agent skill into OpenViking from SKILL.md text or a source path/URL.
 
     `content` is the full SKILL.md text; `path` is a local folder/zip or Git URL.
@@ -161,12 +171,17 @@ def openviking_health() -> str:
 TOOLS = {
     "openviking_find": (
         openviking_find,
-        "Ranked semantic recall from OpenViking long-term memory (URI + abstract + score). "
-        "Call at the start of substantive tasks before doing the work.",
+        (
+            "Ranked semantic recall from OpenViking long-term memory (URI + abstract + score). "
+            "Call at the start of substantive tasks before doing the work."
+        ),
     ),
     "openviking_search": (
         openviking_search,
-        "Deeper intent-aware search over OpenViking long-term memory; use when find is too shallow.",
+        (
+            "Deeper intent-aware search over OpenViking long-term memory; "
+            "use when find is too shallow."
+        ),
     ),
     "openviking_read": (
         openviking_read,
@@ -182,7 +197,10 @@ TOOLS = {
     ),
     "openviking_add_skill": (
         openviking_add_skill,
-        "Install an agent skill into OpenViking from SKILL.md text, a local folder/zip, or a Git URL.",
+        (
+            "Install an agent skill into OpenViking from SKILL.md text, "
+            "a local folder/zip, or a Git URL."
+        ),
     ),
     "openviking_health": (
         openviking_health,

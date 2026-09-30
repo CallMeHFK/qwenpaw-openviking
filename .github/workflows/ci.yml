@@ -19,3 +19,6 @@ jobs:
 
       - name: Run tests
         run: python3 -m unittest discover -s tests -v
+
+      - name: Lint
+        run: pipx run ruff check .

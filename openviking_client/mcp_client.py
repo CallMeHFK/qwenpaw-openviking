@@ -6,6 +6,7 @@ mcp-session-id response header, protocol-version negotiation on initialize,
 one re-initialize-and-retry on 400/404 (expired session).
 """
 
+import contextlib
 import json
 import socket
 import threading
@@ -103,7 +104,11 @@ def serialize_body_for_error(body_text):
 
 
 def build_ov_headers(config, actor_peer_id="", identity_headers=None, extra_headers=None):
-    identity = bool(config.get("send_identity_headers")) if identity_headers is None else bool(identity_headers)
+    identity = (
+        bool(config.get("send_identity_headers"))
+        if identity_headers is None
+        else bool(identity_headers)
+    )
     headers = {"Content-Type": "application/json"}
     if config.get("api_key"):
         headers["Authorization"] = f"Bearer {config['api_key']}"
@@ -148,7 +153,11 @@ class McpClient:
             extra_headers={
                 "Accept": "application/json, text/event-stream",
                 "MCP-Protocol-Version": self._protocol_version,
-                **({"Mcp-Session-Id": self._session_id} if include_session and self._session_id else {}),
+                **(
+                    {"Mcp-Session-Id": self._session_id}
+                    if include_session and self._session_id
+                    else {}
+                ),
             },
         )
 
@@ -169,21 +178,23 @@ class McpClient:
                     self._session_id = next_session
                 if message.get("method") == "initialize":
                     for msg in messages:
-                        negotiated = (msg.get("result") or {}).get("protocolVersion") if isinstance(msg, dict) else None
+                        negotiated = (
+                            (msg.get("result") or {}).get("protocolVersion")
+                            if isinstance(msg, dict)
+                            else None
+                        )
                         if isinstance(negotiated, str) and negotiated:
                             self._protocol_version = negotiated
                             break
                 return messages
         except urllib.error.HTTPError as exc:
             text = ""
-            try:
+            with contextlib.suppress(Exception):
                 text = exc.read().decode("utf-8", errors="replace")
-            except Exception:
-                pass
             if exc.code in (401, 403):
                 raise McpAuthError(exc.code, text) from exc
             raise McpHttpError(exc.code, text) from exc
-        except (socket.timeout, TimeoutError) as exc:
+        except TimeoutError as exc:
             raise McpTimeoutError(str(exc) or "timed out") from exc
         except urllib.error.URLError as exc:
             reason = exc.reason
@@ -202,16 +213,21 @@ class McpClient:
                 "protocolVersion": DEFAULT_PROTOCOL_VERSION,
                 "capabilities": {},
                 "clientInfo": {
-                    "name": self._config.get("user_agent", "openviking-memory-qwenpaw").split("/")[0],
-                    "version": (self._config.get("user_agent", "/0.0.0").split("/") or ["", "0.0.0"])[-1],
+                    "name": self._config.get(
+                        "user_agent", "openviking-memory-qwenpaw"
+                    ).split("/")[0],
+                    "version": (
+                        self._config.get("user_agent", "/0.0.0").split("/") or ["", "0.0.0"]
+                    )[-1],
                 },
             },
         }, include_session=False)
         self._initialized = True
-        try:
-            self._post({"jsonrpc": "2.0", "method": "notifications/initialized"}, include_session=True)
-        except OpenVikingError:
-            pass
+        with contextlib.suppress(OpenVikingError):
+            self._post(
+                {"jsonrpc": "2.0", "method": "notifications/initialized"},
+                include_session=True,
+            )
         return messages
 
     def _request_once(self, method, params):
@@ -235,13 +251,16 @@ class McpClient:
         """tools/call with one re-initialize retry on an expired session (400/404)."""
         with self._lock:
             try:
-                return self._request_once("tools/call", {"name": name, "arguments": arguments or {}})
+                return self._call_tool_once(name, arguments)
             except McpHttpError as exc:
                 if exc.status not in (400, 404):
                     raise
                 self._initialized = False
                 self._initialize()
-                return self._request_once("tools/call", {"name": name, "arguments": arguments or {}})
+                return self._call_tool_once(name, arguments)
+
+    def _call_tool_once(self, name, arguments):
+        return self._request_once("tools/call", {"name": name, "arguments": arguments or {}})
 
     def list_tools(self):
         with self._lock:
@@ -262,10 +281,9 @@ class McpClient:
             request = urllib.request.Request(
                 self._mcp_url, headers=self._headers(True), method="DELETE",
             )
-            try:
-                with urllib.request.urlopen(request, timeout=DELETE_TIMEOUT_S):
-                    pass
-            except Exception:
+            with contextlib.suppress(Exception), urllib.request.urlopen(
+                request, timeout=DELETE_TIMEOUT_S
+            ):
                 pass
             self._session_id = ""
             self._initialized = False

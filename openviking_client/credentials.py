@@ -25,7 +25,8 @@ CREDENTIAL_ENV_VARS = [
     "OPENVIKING_PEER_ID",
 ]
 
-CONNECTION_ENV_VARS = CREDENTIAL_ENV_VARS + [
+CONNECTION_ENV_VARS = [
+    *CREDENTIAL_ENV_VARS,
     "OPENVIKING_AUTH_MODE",
     "OPENVIKING_CREDENTIAL_SOURCE",
     "OPENVIKING_CREDENTIALS_SOURCE",
@@ -57,7 +58,7 @@ def _try_load_json(path):
     if not path:
         return None
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
         return data if isinstance(data, dict) else None
     except Exception:
@@ -70,7 +71,7 @@ def build_user_agent(harness, version):
 
 def read_manifest_version(manifest_path):
     try:
-        with open(manifest_path, "r", encoding="utf-8") as f:
+        with open(manifest_path, encoding="utf-8") as f:
             return _str(json.load(f).get("version"), "")
     except Exception:
         return ""
@@ -92,13 +93,18 @@ def _has_credential_fields(obj):
         return False
     return any(
         isinstance(obj.get(k), str)
-        for k in ("url", "api_key", "account", "account_id", "user", "user_id", "actor_peer_id", "peer_id")
+        for k in (
+            "url", "api_key", "account", "account_id",
+            "user", "user_id", "actor_peer_id", "peer_id",
+        )
     )
 
 
 def load_credential_files(env=None):
     env = os.environ if env is None else env
-    cli_path_candidate = _normalize_path(env.get("OPENVIKING_CLI_CONFIG_FILE")) or DEFAULT_OVCLI_CONF_PATH
+    cli_path_candidate = (
+        _normalize_path(env.get("OPENVIKING_CLI_CONFIG_FILE")) or DEFAULT_OVCLI_CONF_PATH
+    )
     ov_path_candidate = _normalize_path(env.get("OPENVIKING_CONFIG_FILE")) or DEFAULT_OV_CONF_PATH
     cli_path_env = bool(_str(env.get("OPENVIKING_CLI_CONFIG_FILE"), ""))
     ov_path_env = bool(_str(env.get("OPENVIKING_CONFIG_FILE"), ""))
@@ -158,7 +164,9 @@ def _normalize_auth_mode(value):
 
 
 def _auth_mode_in(section):
-    return _normalize_auth_mode(section.get("authMode")) or _normalize_auth_mode(section.get("auth_mode"))
+    return _normalize_auth_mode(section.get("authMode")) or _normalize_auth_mode(
+        section.get("auth_mode")
+    )
 
 
 def _source_mode(env):
@@ -220,7 +228,10 @@ def resolve_connection(harness, env=None, files=None, host_input=None, root_key_
     mode = _source_mode(env)
     env_has_credentials = _has_env_credential_fields(env)
     pinned = mode == "cli" or (
-        mode == "auto" and not env_has_credentials and bool(cli_path) and _has_credential_fields(cli_file)
+        mode == "auto"
+        and not env_has_credentials
+        and bool(cli_path)
+        and _has_credential_fields(cli_file)
     )
     unpinned = lambda layer: [] if pinned else [layer]  # noqa: E731
     from_files = mode != "env"
@@ -231,7 +242,12 @@ def resolve_connection(harness, env=None, files=None, host_input=None, root_key_
 
     key = _first_layer([
         (_str(host.get("apiKey"), ""), "host"),
-        *unpinned((_str(env.get("OPENVIKING_BEARER_TOKEN"), _str(env.get("OPENVIKING_API_KEY"), "")), "env")),
+        *unpinned(
+            (
+                _str(env.get("OPENVIKING_BEARER_TOKEN"), _str(env.get("OPENVIKING_API_KEY"), "")),
+                "env",
+            )
+        ),
         *filed(
             (_str(cli_file.get("api_key"), ""), "ovcli", cli_path),
             (_scalar(plugin.get("apiKey")), "ovcli", cli_path),
@@ -250,15 +266,26 @@ def resolve_connection(harness, env=None, files=None, host_input=None, root_key_
             *(() if pinned else filed((_str(section.get(knob), ""), "ov", ov_path))),
         ])["value"]
 
-    account = identity(host.get("account"), "OPENVIKING_ACCOUNT",
-                       _str(cli_file.get("account"), _str(cli_file.get("account_id"), "")), "accountId")
-    user = identity(host.get("user"), "OPENVIKING_USER",
-                    _str(cli_file.get("user"), _str(cli_file.get("user_id"), "")), "userId")
+    account = identity(
+        host.get("account"),
+        "OPENVIKING_ACCOUNT",
+        _str(cli_file.get("account"), _str(cli_file.get("account_id"), "")),
+        "accountId",
+    )
+    user = identity(
+        host.get("user"),
+        "OPENVIKING_USER",
+        _str(cli_file.get("user"), _str(cli_file.get("user_id"), "")),
+        "userId",
+    )
 
     peer_id = _first_layer([
         *unpinned((_str(env.get("OPENVIKING_PEER_ID"), ""), "env")),
         *filed((_str(cli_file.get("actor_peer_id"), _str(cli_file.get("peer_id"), "")), "ovcli")),
-        *(() if pinned else filed((_str(section.get("peerId"), _str(section.get("peer_id"), "")), "ov"))),
+        *(
+            () if pinned
+            else filed((_str(section.get("peerId"), _str(section.get("peer_id"), "")), "ov"))
+        ),
     ])["value"]
 
     auth_mode = (
@@ -270,9 +297,16 @@ def resolve_connection(harness, env=None, files=None, host_input=None, root_key_
     )
 
     host_base_url = _trim_slash(_str(host.get("baseUrl"), ""))
-    env_url = "" if pinned else _str(env.get("OPENVIKING_URL"), _str(env.get("OPENVIKING_BASE_URL"), ""))
+    env_url = (
+        "" if pinned
+        else _str(env.get("OPENVIKING_URL"), _str(env.get("OPENVIKING_BASE_URL"), ""))
+    )
     file_url = (_str(cli_file.get("url"), "") or _str(server.get("url"), "")) if from_files else ""
-    base_url = host_base_url or _trim_slash(env_url or file_url) or _server_address(server if from_files else {})
+    base_url = (
+        host_base_url
+        or _trim_slash(env_url or file_url)
+        or _server_address(server if from_files else {})
+    )
     env_mcp_url = "" if pinned else _str(env.get("OPENVIKING_MCP_URL"), "")
     mcp_url = env_mcp_url if (not host_base_url and env_mcp_url) else f"{base_url}/mcp"
 
@@ -283,7 +317,9 @@ def resolve_connection(harness, env=None, files=None, host_input=None, root_key_
         "ov_file": ov_file,
         "ov_path": ov_path,
         "harness": name,
-        "credential_source": "ovcli" if pinned else ("env" if (mode == "env" or env_has_credentials) else "auto"),
+        "credential_source": (
+            "ovcli" if pinned else ("env" if (mode == "env" or env_has_credentials) else "auto")
+        ),
         "base_url": base_url,
         "mcp_url": mcp_url,
         "api_key": key["value"],

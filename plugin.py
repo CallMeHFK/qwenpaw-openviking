@@ -17,7 +17,7 @@ TOOL_ICON = "🧠"
 
 def _plugin_version():
     try:
-        with open(PLUGIN_DIR / "plugin.json", "r", encoding="utf-8") as f:
+        with open(PLUGIN_DIR / "plugin.json", encoding="utf-8") as f:
             return str(json.load(f).get("version", ""))
     except Exception:
         return ""
@@ -57,10 +57,13 @@ class OpenVikingMemoryPlugin:
             tools.configure(proxy)
             logger.info(
                 "openviking-memory: server=%s credential_source=%s auth_mode=%s has_api_key=%s",
-                proxy["mcp_url"], proxy["credential_source"], proxy["auth_mode"], proxy["has_api_key"],
+                proxy["mcp_url"],
+                proxy["credential_source"],
+                proxy["auth_mode"],
+                proxy["has_api_key"],
             )
         except Exception as exc:
-            logger.error("openviking-memory: credential resolution failed: %s", exc, exc_info=True)
+            logger.exception("openviking-memory: credential resolution failed: %s", exc)
 
         for tool_name, (tool_func, description) in tools.TOOLS.items():
             try:
