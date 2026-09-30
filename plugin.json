@@ -1,0 +1,15 @@
+{
+  "id": "openviking-memory",
+  "name": "openviking-memory",
+  "version": "0.1.0",
+  "type": "general",
+  "description": "OpenViking semantic long-term memory for QwenPaw agents: recall prior knowledge with find/search/read and persist durable facts with remember/write, backed by an OpenViking server.",
+  "description_i18n": {
+    "zh-CN": "为 QwenPaw agent 提供 OpenViking 语义长期记忆：用 find/search/read 召回先验知识，用 remember/write 沉淀持久事实，由 OpenViking 服务器支撑。",
+    "en-US": "OpenViking semantic long-term memory for QwenPaw agents: recall prior knowledge with find/search/read and persist durable facts with remember/write, backed by an OpenViking server."
+  },
+  "author": "CallMeHFK",
+  "entry": {"backend": "plugin.py"},
+  "dependencies": [],
+  "qwenpaw_version": {"min": "2.1.0", "max": "3.0.0"}
+}
