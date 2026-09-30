@@ -11,5 +11,5 @@
   "author": "CallMeHFK",
   "entry": {"backend": "plugin.py"},
   "dependencies": [],
-  "qwenpaw_version": {"min": "2.1.0", "max": "3.0.0"}
+  "qwenpaw_version": {"min": "2.1.0", "max": "2.99.0"}
 }
