@@ -132,7 +132,7 @@ def openviking_search(
 
 def openviking_read(uri: str) -> str:
     """Read the exact text of one viking:// URI (e.g. a memory or SKILL.md)."""
-    return _call("read", _clean({"uri": uri}))
+    return _call("read", _clean({"uris": [uri]}))
 
 
 def openviking_remember(content: str) -> str:
@@ -151,15 +151,16 @@ def openviking_write(uri: str, content: str) -> str:
 
 
 def openviking_add_skill(
-    name: str = "", content: str = "", path: str = "", target_uri: str = ""
+    content: str = "", path: str = "", target_uri: str = ""
 ) -> str:
     """Install an agent skill into OpenViking from SKILL.md text or a source path/URL.
 
-    `content` is the full SKILL.md text; `path` is a local folder/zip or Git URL.
-    `target_uri` defaults to the user's own skills root; viking://agent/skills shares.
+    `content` is the full SKILL.md text (the name comes from its frontmatter);
+    `path` is a local folder/zip or Git URL. `target_uri` defaults to the user's
+    own skills root; viking://agent/skills shares account-wide.
     """
     return _call("add_skill", _clean({
-        "name": name, "data": content, "path": path, "target_uri": target_uri,
+        "data": content, "path": path, "target_uri": target_uri,
     }))
 
 

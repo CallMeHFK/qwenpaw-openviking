@@ -98,7 +98,7 @@ class CallToolTest(unittest.TestCase):
             FakeResponse({"jsonrpc": "2.0", "id": "qwenpaw-2",
                           "result": {"content": [{"type": "text", "text": "hit"}]}}),
         ])
-        with mock.patch.object(mcp_client.urllib.request, "urlopen", urlopen):
+        with mock.patch.object(mcp_client, "_urlopen", urlopen):
             client = McpClient(CFG)
             result = client.call_tool("find", {"query": "q"})
         self.assertEqual(result["content"][0]["text"], "hit")
@@ -115,7 +115,7 @@ class CallToolTest(unittest.TestCase):
             FakeResponse({}),
             FakeResponse(sse, content_type="text/event-stream"),
         ])
-        with mock.patch.object(mcp_client.urllib.request, "urlopen", urlopen):
+        with mock.patch.object(mcp_client, "_urlopen", urlopen):
             result = McpClient(CFG).call_tool("health", {})
         self.assertEqual(result["content"][0]["text"], "ok")
 
@@ -129,7 +129,7 @@ class CallToolTest(unittest.TestCase):
             FakeResponse({"jsonrpc": "2.0", "id": "qwenpaw-4",
                           "result": {"content": [{"type": "text", "text": "after-reinit"}]}}),
         ])
-        with mock.patch.object(mcp_client.urllib.request, "urlopen", urlopen):
+        with mock.patch.object(mcp_client, "_urlopen", urlopen):
             result = McpClient(CFG).call_tool("find", {"query": "q"})
         self.assertEqual(result["content"][0]["text"], "after-reinit")
 
@@ -141,7 +141,7 @@ class CallToolTest(unittest.TestCase):
             ),
         ])
         with (
-            mock.patch.object(mcp_client.urllib.request, "urlopen", urlopen),
+            mock.patch.object(mcp_client, "_urlopen", urlopen),
             self.assertRaises(mcp_client.McpAuthError),
         ):
             McpClient(CFG).call_tool("find", {"query": "q"})
@@ -150,10 +150,22 @@ class CallToolTest(unittest.TestCase):
     def test_connection_refused(self):
         urlopen = make_urlopen([urllib.error.URLError("Connection refused")])
         with (
-            mock.patch.object(mcp_client.urllib.request, "urlopen", urlopen),
+            mock.patch.object(mcp_client, "_urlopen", urlopen),
             self.assertRaises(mcp_client.McpConnectionError),
         ):
             McpClient(CFG).call_tool("find", {"query": "q"})
+
+    def test_dropped_connection_maps_to_connection_error(self):
+        import http.client
+
+        for exc in (ConnectionResetError("reset by peer"),
+                    http.client.RemoteDisconnected("dropped")):
+            urlopen = make_urlopen([exc])
+            with (
+                mock.patch.object(mcp_client, "_urlopen", urlopen),
+                self.assertRaises(mcp_client.McpConnectionError),
+            ):
+                McpClient(CFG).call_tool("find", {"query": "q"})
 
     def test_jsonrpc_error_raises_protocol_error(self):
         urlopen = make_urlopen([
@@ -163,10 +175,99 @@ class CallToolTest(unittest.TestCase):
                           "error": {"code": -32602, "message": "unknown tool"}}),
         ])
         with (
-            mock.patch.object(mcp_client.urllib.request, "urlopen", urlopen),
+            mock.patch.object(mcp_client, "_urlopen", urlopen),
             self.assertRaises(mcp_client.McpProtocolError),
         ):
             McpClient(CFG).call_tool("nope", {})
+
+    def test_negotiated_protocol_version_used_on_later_requests(self):
+        urlopen = make_urlopen([
+            init_response(protocol="2025-03-26"),
+            FakeResponse({}),
+            FakeResponse({"jsonrpc": "2.0", "id": "qwenpaw-2", "result": {}}),
+        ])
+        with mock.patch.object(mcp_client, "_urlopen", urlopen):
+            McpClient(CFG).call_tool("health", {})
+        self.assertEqual(urlopen.calls[-1].headers.get("Mcp-protocol-version"), "2025-03-26")
+
+    def test_session_id_rotates_from_non_init_response(self):
+        urlopen = make_urlopen([
+            init_response(session="sess-1"),
+            FakeResponse({}),
+            FakeResponse({"jsonrpc": "2.0", "id": "qwenpaw-2", "result": {}},
+                         headers={"mcp-session-id": "sess-2"}),
+            FakeResponse({"jsonrpc": "2.0", "id": "qwenpaw-3", "result": {}}),
+        ])
+        with mock.patch.object(mcp_client, "_urlopen", urlopen):
+            client = McpClient(CFG)
+            client.call_tool("health", {})
+            client.call_tool("health", {})
+        self.assertEqual(urlopen.calls[-1].headers.get("Mcp-session-id"), "sess-2")
+
+    def test_mcp_url_derived_from_base_url(self):
+        self.assertEqual(McpClient({"base_url": "http://x:1"}).mcp_url, "http://x:1/mcp")
+
+    def test_sse_stream_matched_by_request_id(self):
+        sse = (
+            'data: {"jsonrpc":"2.0","id":"other","result":{"content":[]}}\n\n'
+            'data: {"jsonrpc":"2.0","id":"qwenpaw-2","result":{"content":'
+            '[{"type":"text","text":"mine"}]}}\n\n'
+        )
+        urlopen = make_urlopen([
+            init_response(),
+            FakeResponse({}),
+            FakeResponse(sse, content_type="text/event-stream"),
+        ])
+        with mock.patch.object(mcp_client, "_urlopen", urlopen):
+            result = McpClient(CFG).call_tool("health", {})
+        self.assertEqual(result["content"][0]["text"], "mine")
+
+    def test_auth_error_after_successful_init_not_retried(self):
+        urlopen = make_urlopen([
+            init_response(),
+            FakeResponse({}),
+            urllib.error.HTTPError("http://ov.test/mcp", 401, "Unauthorized", {},
+                                   io.BytesIO(b"{}")),
+        ])
+        with (
+            mock.patch.object(mcp_client, "_urlopen", urlopen),
+            self.assertRaises(mcp_client.McpAuthError),
+        ):
+            McpClient(CFG).call_tool("find", {"query": "q"})
+        self.assertEqual(len(urlopen.calls), 3)  # init, notification, failing call — no re-init
+
+    def test_initialize_400_not_retried(self):
+        urlopen = make_urlopen([
+            urllib.error.HTTPError("http://ov.test/mcp", 400, "Bad Request", {},
+                                   io.BytesIO(b"")),
+        ])
+        with (
+            mock.patch.object(mcp_client, "_urlopen", urlopen),
+            self.assertRaises(mcp_client.McpHttpError),
+        ):
+            McpClient(CFG).call_tool("find", {"query": "q"})
+        self.assertEqual(len(urlopen.calls), 1)
+
+
+class SafeRedirectTest(unittest.TestCase):
+    def test_cross_origin_redirect_strips_credentials(self):
+        req = mcp_client.urllib.request.Request("http://ov.test/mcp", data=b"{}")
+        req.add_header("Authorization", "Bearer secret")
+        req.add_header("X-OpenViking-Account", "acc")
+        handler = mcp_client._SafeRedirectHandler()
+        new_req = handler.redirect_request(req, None, 302, "Found", {}, "http://evil.test/x")
+        self.assertIsNone(new_req.headers.get("Authorization"))
+        self.assertIsNone(new_req.headers.get("X-Openviking-account"))
+
+    def test_same_origin_redirect_keeps_credentials(self):
+        # urllib refuses to re-POST a body across 307/308 (raises HTTPError),
+        # so the followable redirect for a POST is 302.
+        req = mcp_client.urllib.request.Request("http://ov.test/mcp", data=b"{}")
+        req.add_header("Authorization", "Bearer secret")
+        handler = mcp_client._SafeRedirectHandler()
+        new_req = handler.redirect_request(req, None, 302, "Found", {},
+                                           "http://ov.test/mcp/")
+        self.assertEqual(new_req.headers.get("Authorization"), "Bearer secret")
 
 
 if __name__ == "__main__":

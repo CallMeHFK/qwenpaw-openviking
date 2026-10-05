@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import urllib.request
 from pathlib import Path
 
@@ -41,18 +42,20 @@ class OpenVikingMemoryPlugin:
 
     def register(self, api):
         try:
-            connection = credentials.resolve_connection(
-                HARNESS, host_input=_host_input_from_config(getattr(api, "config", None))
+            # Resolve once with root_key_fallback=True (the proxy-side semantic):
+            # a pinned ovcli.conf that names only a url still falls back to
+            # ov.conf's server.root_api_key. Merging two differently-resolved
+            # views used to overwrite that key with an empty one.
+            proxy = credentials.resolve_connection(
+                HARNESS,
+                host_input=_host_input_from_config(getattr(api, "config", None)),
+                root_key_fallback=True,
             )
-            proxy = credentials.build_proxy_connection(HARNESS, version=_plugin_version())
-            # resolve_connection honours host input; build_proxy_connection does
-            # not, so merge host overrides into the proxy view.
-            if connection["base_url"] != proxy["base_url"]:
-                proxy["base_url"] = connection["base_url"]
-                proxy["mcp_url"] = connection["mcp_url"]
-            for key in ("api_key", "account", "user", "peer_id", "auth_mode",
-                        "send_identity_headers", "has_api_key"):
-                proxy[key] = connection[key]
+            proxy["user_agent"] = credentials.build_user_agent(HARNESS, _plugin_version())
+            proxy["timeout_ms"] = credentials._clamp_timeout(
+                os.environ.get("OPENVIKING_TIMEOUT_MS")
+            )
+            proxy["debug"] = credentials._env_flag(os.environ, "OPENVIKING_DEBUG")
             self._connection = proxy
             tools.configure(proxy)
             logger.info(
@@ -114,7 +117,10 @@ class OpenVikingMemoryPlugin:
                 headers=build_ov_headers(conn, actor_peer_id=conn.get("peer_id", "")),
                 method="GET",
             )
-            timeout_s = max(1.0, float(conn.get("timeout_ms", 15000)) / 1000.0)
+            # Startup hooks run on the install path: a hanging server must not
+            # stall plugin installation, so this probe gets a hard short budget
+            # regardless of the (much longer) per-request tool timeout.
+            timeout_s = min(3.0, max(1.0, float(conn.get("timeout_ms", 15000)) / 1000.0))
             with urllib.request.urlopen(request, timeout=timeout_s) as response:
                 body = response.read().decode("utf-8", errors="replace")
             logger.info("openviking-memory: server healthy at %s: %s", url, body[:300])

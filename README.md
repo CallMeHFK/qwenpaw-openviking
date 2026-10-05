@@ -61,7 +61,7 @@ Additional environment variables:
 | `openviking_read` | `(uri)` | Read the exact text at one `viking://` URI |
 | `openviking_remember` | `(content)` | Persist a durable fact, preference, decision, or lesson |
 | `openviking_write` | `(uri, content)` | Write exact content to a known `viking://` URI |
-| `openviking_add_skill` | `(name="", content="", path="", target_uri="")` | Install a skill from SKILL.md text, a local folder/zip, or a Git URL |
+| `openviking_add_skill` | `(content="", path="", target_uri="")` | Install a skill from SKILL.md text, a local folder/zip, or a Git URL |
 | `openviking_health` | `()` | Check connectivity and credentials against the server |
 
 Argument names mirror the upstream MCP tools; the server-side schema is authoritative, so an unknown parameter surfaces as a server validation error rather than a silent client-side drop.

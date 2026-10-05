@@ -200,7 +200,7 @@ def _server_address(server):
     host = _str(server.get("host"), "127.0.0.1").replace("0.0.0.0", "127.0.0.1")
     try:
         port = int(float(server.get("port")))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         port = 1933
     return f"http://{host}:{port}"
 
@@ -213,7 +213,7 @@ def _clamp_timeout(value):
     raw = _str(value, "")
     try:
         parsed = int(float(raw)) if raw else DEFAULT_TIMEOUT_MS
-    except ValueError:
+    except (ValueError, OverflowError):
         parsed = DEFAULT_TIMEOUT_MS
     return max(MIN_TIMEOUT_MS, parsed)
 

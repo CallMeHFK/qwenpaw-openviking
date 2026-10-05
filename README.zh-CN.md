@@ -61,7 +61,7 @@ curl -X POST http://127.0.0.1:19999/api/plugins/install \
 | `openviking_read` | `(uri)` | 读取一个 `viking://` URI 的精确文本 |
 | `openviking_remember` | `(content)` | 沉淀持久事实、偏好、决定或教训 |
 | `openviking_write` | `(uri, content)` | 向已知 `viking://` URI 写入精确内容 |
-| `openviking_add_skill` | `(name="", content="", path="", target_uri="")` | 从 SKILL.md 文本、本地目录/zip 或 Git URL 安装技能 |
+| `openviking_add_skill` | `(content="", path="", target_uri="")` | 从 SKILL.md 文本、本地目录/zip 或 Git URL 安装技能 |
 | `openviking_health` | `()` | 检查到服务器的连通性与凭证 |
 
 参数名与上游 MCP 工具对齐；参数 schema 以服务端为准——未知参数会表现为服务端校验错误，而不是被客户端静默丢弃。

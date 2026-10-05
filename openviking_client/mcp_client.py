@@ -7,14 +7,49 @@ one re-initialize-and-retry on 400/404 (expired session).
 """
 
 import contextlib
+import http.client
 import json
 import socket
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 
 DEFAULT_PROTOCOL_VERSION = "2025-06-18"
 DELETE_TIMEOUT_S = 2.0
+
+_SENSITIVE_HEADERS = (
+    "Authorization",
+    "X-OpenViking-Account",
+    "X-OpenViking-User",
+    "X-OpenViking-Actor-Peer",
+)
+
+
+class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Strip credentials on cross-origin redirects (fetch-spec parity).
+
+    urllib forwards Authorization verbatim on 30x; Node's fetch strips it
+    cross-origin, and the upstream proxy relies on that behavior.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new_req is None:
+            return None
+        origin = urllib.parse.urlsplit(req.full_url).netloc
+        if urllib.parse.urlsplit(newurl).netloc != origin:
+            for header in _SENSITIVE_HEADERS:
+                new_req.headers.pop(header, None)
+                new_req.unredirected_hdrs.pop(header, None)
+        return new_req
+
+
+_opener = urllib.request.build_opener(_SafeRedirectHandler)
+
+
+def _urlopen(request, timeout):
+    return _opener.open(request, timeout=timeout)
 
 
 class OpenVikingError(Exception):
@@ -170,7 +205,7 @@ class McpClient:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=self._timeout_s) as response:
+            with _urlopen(request, timeout=self._timeout_s) as response:
                 text = response.read().decode("utf-8", errors="replace")
                 messages = _parse_http_body(response.headers.get("content-type"), text)
                 next_session = response.headers.get("mcp-session-id")
@@ -191,6 +226,10 @@ class McpClient:
             text = ""
             with contextlib.suppress(Exception):
                 text = exc.read().decode("utf-8", errors="replace")
+            # Error responses can still carry a fresh session id.
+            next_session = exc.headers.get("mcp-session-id") if exc.headers else None
+            if next_session:
+                self._session_id = next_session
             if exc.code in (401, 403):
                 raise McpAuthError(exc.code, text) from exc
             raise McpHttpError(exc.code, text) from exc
@@ -201,10 +240,17 @@ class McpClient:
             if isinstance(reason, (socket.timeout, TimeoutError)):
                 raise McpTimeoutError(str(reason)) from exc
             raise McpConnectionError(str(reason)) from exc
+        except (OSError, http.client.HTTPException) as exc:
+            # Server accepted then dropped the connection (RemoteDisconnected,
+            # ConnectionResetError) or truncated the body (IncompleteRead) —
+            # urllib lets these through unwrapped.
+            raise McpConnectionError(str(exc) or exc.__class__.__name__) from exc
 
     def _initialize(self):
         self._session_id = ""
         self._protocol_version = DEFAULT_PROTOCOL_VERSION
+        user_agent = self._config.get("user_agent") or "openviking-memory-qwenpaw/0.0.0"
+        client_name, _, client_version = user_agent.partition("/")
         messages = self._post({
             "jsonrpc": "2.0",
             "id": self._next_id(),
@@ -213,12 +259,8 @@ class McpClient:
                 "protocolVersion": DEFAULT_PROTOCOL_VERSION,
                 "capabilities": {},
                 "clientInfo": {
-                    "name": self._config.get(
-                        "user_agent", "openviking-memory-qwenpaw"
-                    ).split("/")[0],
-                    "version": (
-                        self._config.get("user_agent", "/0.0.0").split("/") or ["", "0.0.0"]
-                    )[-1],
+                    "name": client_name,
+                    "version": client_version or "0.0.0",
                 },
             },
         }, include_session=False)
@@ -253,7 +295,11 @@ class McpClient:
             try:
                 return self._call_tool_once(name, arguments)
             except McpHttpError as exc:
-                if exc.status not in (400, 404):
+                # Retry only when the session expired mid-call; a 400/404 from
+                # _initialize itself leaves _initialized False and re-running
+                # it would just fail the same way (upstream retries only
+                # non-initialize messages).
+                if exc.status not in (400, 404) or not self._initialized:
                     raise
                 self._initialized = False
                 self._initialize()
@@ -281,9 +327,7 @@ class McpClient:
             request = urllib.request.Request(
                 self._mcp_url, headers=self._headers(True), method="DELETE",
             )
-            with contextlib.suppress(Exception), urllib.request.urlopen(
-                request, timeout=DELETE_TIMEOUT_S
-            ):
+            with contextlib.suppress(Exception), _urlopen(request, timeout=DELETE_TIMEOUT_S):
                 pass
             self._session_id = ""
             self._initialized = False

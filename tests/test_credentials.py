@@ -86,6 +86,28 @@ class ResolveConnectionTest(unittest.TestCase):
         self.assertEqual(c["base_url"], "http://h:1933")
         self.assertEqual(c["mcp_url"], "http://h:1933/mcp")
 
+    def test_root_api_key_fallback(self):
+        # Pinned ovcli.conf that names only a url: the key may still come from
+        # ov.conf's server.root_api_key, but only with root_key_fallback=True.
+        files = {
+            **empty_files(),
+            "cli_file": {"url": "http://cli-host:3333"},
+            "cli_path": "/x/ovcli.conf",
+            "ov_file": {"server": {"root_api_key": "root-key"}},
+            "ov_path": "/x/ov.conf",
+        }
+        with_fallback = credentials.resolve_connection(
+            "qwenpaw", env={}, files=files, root_key_fallback=True
+        )
+        without_fallback = conn(files=files)
+        self.assertEqual(with_fallback["api_key"], "root-key")
+        self.assertEqual(without_fallback["api_key"], "")
+
+    def test_overflow_values_fall_back_to_defaults(self):
+        self.assertEqual(credentials._clamp_timeout("inf"), credentials.DEFAULT_TIMEOUT_MS)
+        files = {**empty_files(), "ov_file": {"server": {"port": "inf"}}, "ov_path": "/x/ov.conf"}
+        self.assertEqual(conn(files=files)["base_url"], "http://127.0.0.1:1933")
+
 
 class ProxyConnectionTest(unittest.TestCase):
     def test_timeout_clamped_to_minimum(self):
