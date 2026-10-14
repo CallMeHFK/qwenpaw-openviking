@@ -51,6 +51,21 @@ curl -X POST http://127.0.0.1:19999/api/plugins/install \
 | `OPENVIKING_CREDENTIAL_SOURCE` | 把凭证来源固定为 `env` 或 `cli`（默认 `auto`） |
 | `OPENVIKING_TIMEOUT_MS` | 请求超时毫秒数（默认 15000，最小 1000） |
 | `OPENVIKING_DEBUG` | 开启调试日志，写入 `~/.openviking/logs/qwenpaw.log` |
+| `OPENVIKING_PROXY_BYPASS` | 对已配置的服务器主机绕过 `http_proxy`/`https_proxy`（默认 `1`；设为 `0` 改走环境代理） |
+| `OPENVIKING_NO_PROXY_EXTRA` | 追加绕过的主机，逗号分隔（前导 `.` 匹配子域名） |
+
+## 代理环境
+
+插件通过 Python `urllib` 发起 HTTP 请求，会读取 `http_proxy`/`https_proxy`/`no_proxy` 环境变量。当本机挂着本地代理（如 `http://127.0.0.1:7890`）而 `no_proxy` 没有覆盖 OpenViking 服务器地址时——服务器走 tailnet 网段（`100.64.0.0/10`）或内网时很常见——所有请求都会死在代理隧道里，报极具误导性的 `SSL: UNEXPECTED_EOF_WHILE_READING`。
+
+插件默认对配置中的 `base_url`/`mcp_url` 主机绕过环境代理，尾网/内网服务器开箱即用。需要时的开关：
+
+- 插件设置 `proxy_bypass: false` 或 `OPENVIKING_PROXY_BYPASS=0`：改走环境代理（例如必须经公司出口代理才能访问服务器）。
+- 插件设置 `no_proxy_extra: ["host", ...]` 或 `OPENVIKING_NO_PROXY_EXTRA="host1,.domain2"`：追加绕过更多主机。
+
+两处诊断让代理类故障一眼可辨：连接报错附带代理提示（列出当前生效的代理变量）；启动健康检查在主探测失败时会用翻转后的策略补测一次，日志直接写明哪条路径（直连/代理）是通的。
+
+也可以不改插件，手动扩展 `no_proxy`，例如 `no_proxy=localhost,127.0.0.1,100.64.0.0/10,your-ov-host`。
 
 ## 工具
 
@@ -73,6 +88,7 @@ plugin.json                  # QwenPaw 插件 manifest（id/name: openviking-mem
 plugin.py                    # 入口：凭证解析、工具注册、hooks
 openviking_client/
   credentials.py             # env → ovcli.conf → ov.conf 凭证解析链
+  proxy.py                   # 环境代理绕过策略与故障诊断
   mcp_client.py              # MCP streamable-HTTP 客户端（stdlib urllib，线程安全）
   tools.py                   # 7 个 openviking_* 工具封装
 skills/                      # 适配自上游 agent-plugins 的 5 个技能

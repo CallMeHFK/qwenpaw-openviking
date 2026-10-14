@@ -15,6 +15,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from . import proxy as _proxy
+
 DEFAULT_PROTOCOL_VERSION = "2025-06-18"
 DELETE_TIMEOUT_S = 2.0
 
@@ -45,11 +47,13 @@ class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
         return new_req
 
 
-_opener = urllib.request.build_opener(_SafeRedirectHandler)
+def build_ov_opener(config):
+    """Opener for OpenViking endpoints: credential-safe redirects + proxy policy."""
+    return _proxy.build_opener(config, extra_handlers=[_SafeRedirectHandler])
 
 
-def _urlopen(request, timeout):
-    return _opener.open(request, timeout=timeout)
+def _urlopen(request, timeout, opener):
+    return opener.open(request, timeout=timeout)
 
 
 class OpenVikingError(Exception):
@@ -167,6 +171,7 @@ class McpClient:
         self._config = dict(config)
         self._mcp_url = self._config.get("mcp_url") or f"{self._config.get('base_url', '')}/mcp"
         self._timeout_s = max(1.0, float(self._config.get("timeout_ms") or 15000) / 1000.0)
+        self._opener = build_ov_opener(self._config)
         self._session_id = ""
         self._protocol_version = DEFAULT_PROTOCOL_VERSION
         self._initialized = False
@@ -205,7 +210,7 @@ class McpClient:
             method="POST",
         )
         try:
-            with _urlopen(request, timeout=self._timeout_s) as response:
+            with _urlopen(request, timeout=self._timeout_s, opener=self._opener) as response:
                 text = response.read().decode("utf-8", errors="replace")
                 messages = _parse_http_body(response.headers.get("content-type"), text)
                 next_session = response.headers.get("mcp-session-id")
@@ -325,9 +330,14 @@ class McpClient:
             if not self._session_id:
                 return
             request = urllib.request.Request(
-                self._mcp_url, headers=self._headers(True), method="DELETE",
+                self._mcp_url,
+                headers=self._headers(True),
+                method="DELETE",
             )
-            with contextlib.suppress(Exception), _urlopen(request, timeout=DELETE_TIMEOUT_S):
+            with (
+                contextlib.suppress(Exception),
+                _urlopen(request, timeout=DELETE_TIMEOUT_S, opener=self._opener),
+            ):
                 pass
             self._session_id = ""
             self._initialized = False

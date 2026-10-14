@@ -51,6 +51,21 @@ Additional environment variables:
 | `OPENVIKING_CREDENTIAL_SOURCE` | Pin the credential source to `env` or `cli` (default: `auto`) |
 | `OPENVIKING_TIMEOUT_MS` | Request timeout in milliseconds (default 15000, minimum 1000) |
 | `OPENVIKING_DEBUG` | Enable debug logging to `~/.openviking/logs/qwenpaw.log` |
+| `OPENVIKING_PROXY_BYPASS` | Bypass `http_proxy`/`https_proxy` for the configured server host (default `1`; set `0` to route through the environment proxy) |
+| `OPENVIKING_NO_PROXY_EXTRA` | Comma-separated extra hosts to bypass (a leading `.` matches subdomains) |
+
+## Proxy environments
+
+The plugin speaks HTTP via Python's `urllib`, which honors `http_proxy`/`https_proxy`/`no_proxy`. On hosts with a local proxy (e.g. `http://127.0.0.1:7890`) whose `no_proxy` list misses the OpenViking server — common when the server is reached over a tailnet (`100.64.0.0/10`) or LAN — every request dies inside the proxy tunnel with a misleading `SSL: UNEXPECTED_EOF_WHILE_READING`.
+
+By default the plugin bypasses the environment proxy for the configured `base_url`/`mcp_url` host, so tailnet/LAN servers keep working with zero setup. Knobs for when you need them:
+
+- Plugin setting `proxy_bypass: false` or `OPENVIKING_PROXY_BYPASS=0`: route through the environment proxy (e.g. a corporate egress proxy required to reach the server).
+- Plugin setting `no_proxy_extra: ["host", ...]` or `OPENVIKING_NO_PROXY_EXTRA="host1,.domain2"`: bypass additional hosts.
+
+Two diagnostics make proxy failures recognizable: connection errors carry a hint naming the active proxy variables, and the startup health check counter-probes with the policy flipped, logging which path (direct vs proxied) actually works.
+
+The manual alternative is extending `no_proxy` yourself, e.g. `no_proxy=localhost,127.0.0.1,100.64.0.0/10,your-ov-host`.
 
 ## Tools
 
@@ -73,6 +88,7 @@ plugin.json                  # QwenPaw plugin manifest (id/name: openviking-memo
 plugin.py                    # Entry: credential resolution, tool registration, hooks
 openviking_client/
   credentials.py             # env → ovcli.conf → ov.conf resolution chain
+  proxy.py                   # env-proxy bypass policy + failure diagnostics
   mcp_client.py              # MCP streamable-HTTP client (stdlib urllib, thread-safe)
   tools.py                   # The seven openviking_* tool wrappers
 skills/                      # Five skills adapted from upstream agent-plugins
