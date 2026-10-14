@@ -5,6 +5,7 @@ import urllib.error
 from unittest import mock
 
 from openviking_client import mcp_client
+from openviking_client import proxy as proxy_module
 from openviking_client.mcp_client import McpClient
 
 
@@ -29,10 +30,12 @@ class FakeResponse:
 def make_urlopen(script):
     """script: list of FakeResponse | Exception, consumed one per POST/DELETE."""
     calls = []
+    openers = []
     queue = list(script)
 
-    def fake_urlopen(request, timeout=None):
+    def fake_urlopen(request, timeout=None, opener=None):
         calls.append(request)
+        openers.append(opener)
         if not queue:
             raise AssertionError("unexpected extra request")
         item = queue.pop(0)
@@ -41,6 +44,7 @@ def make_urlopen(script):
         return item
 
     fake_urlopen.calls = calls
+    fake_urlopen.openers = openers
     return fake_urlopen
 
 
@@ -268,6 +272,40 @@ class SafeRedirectTest(unittest.TestCase):
         new_req = handler.redirect_request(req, None, 302, "Found", {},
                                            "http://ov.test/mcp/")
         self.assertEqual(new_req.headers.get("Authorization"), "Bearer secret")
+
+
+class OpenerWiringTest(unittest.TestCase):
+    def test_client_opener_bypasses_env_proxy_by_default(self):
+        client = McpClient(dict(CFG))
+        self.assertTrue(
+            any(isinstance(h, proxy_module._SelectiveProxyHandler) for h in client._opener.handlers)
+        )
+
+    def test_client_opener_respects_proxy_bypass_false(self):
+        client = McpClient(dict(CFG, proxy_bypass=False))
+        self.assertFalse(
+            any(isinstance(h, proxy_module._SelectiveProxyHandler) for h in client._opener.handlers)
+        )
+
+    def test_urlopen_receives_client_opener(self):
+        urlopen = make_urlopen(
+            [
+                init_response(),
+                FakeResponse({}, content_type="application/json"),
+                FakeResponse({"jsonrpc": "2.0", "id": "qwenpaw-2", "result": {"tools": []}}),
+            ]
+        )
+        client = McpClient(dict(CFG))
+        with mock.patch.object(mcp_client, "_urlopen", urlopen):
+            client.list_tools()
+        self.assertEqual(len(urlopen.openers), 3)
+        self.assertTrue(all(op is client._opener for op in urlopen.openers))
+
+    def test_build_ov_opener_includes_safe_redirect_handler(self):
+        opener = mcp_client.build_ov_opener(dict(CFG))
+        self.assertTrue(
+            any(isinstance(h, mcp_client._SafeRedirectHandler) for h in opener.handlers)
+        )
 
 
 if __name__ == "__main__":

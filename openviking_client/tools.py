@@ -8,6 +8,7 @@ missing parameters surface as server validation errors, not client inventions.
 import json
 import threading
 
+from . import proxy as _proxy
 from .mcp_client import (
     McpAuthError,
     McpClient,
@@ -65,16 +66,18 @@ def _error_string(exc):
                 + (f" Server said: {detail}" if detail else ""))
     if isinstance(exc, McpTimeoutError):
         timeout_ms = (_config or {}).get("timeout_ms", 15000)
-        return (
+        msg = (
             f"OpenViking MCP request timed out after {timeout_ms}ms ({mcp_url}). "
             f"The server may still be processing (rerank can be slow) — check "
             f"/health or raise OPENVIKING_TIMEOUT_MS."
         )
+        return msg + _proxy.proxy_hint(_config or {})
     if isinstance(exc, McpConnectionError):
-        return (
+        msg = (
             f"OpenViking MCP request failed: cannot reach {mcp_url}. Check the "
             f"configured URL and that the OpenViking server is running. ({exc})"
         )
+        return msg + _proxy.proxy_hint(_config or {})
     return f"OpenViking MCP error: {exc}"
 
 

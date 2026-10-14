@@ -7,7 +7,8 @@ import urllib.request
 from pathlib import Path
 
 from openviking_client import credentials, tools
-from openviking_client.mcp_client import build_ov_headers
+from openviking_client import proxy as proxy_policy
+from openviking_client.mcp_client import build_ov_headers, build_ov_opener
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +47,16 @@ class OpenVikingMemoryPlugin:
             # a pinned ovcli.conf that names only a url still falls back to
             # ov.conf's server.root_api_key. Merging two differently-resolved
             # views used to overwrite that key with an empty one.
+            host_config = getattr(api, "config", None)
+            if not isinstance(host_config, dict):
+                host_config = {}
             proxy = credentials.resolve_connection(
                 HARNESS,
-                host_input=_host_input_from_config(getattr(api, "config", None)),
+                host_input=_host_input_from_config(host_config),
                 root_key_fallback=True,
             )
+            proxy["proxy_bypass"] = host_config.get("proxy_bypass")
+            proxy["no_proxy_extra"] = host_config.get("no_proxy_extra")
             proxy["user_agent"] = credentials.build_user_agent(HARNESS, _plugin_version())
             proxy["timeout_ms"] = credentials._clamp_timeout(
                 os.environ.get("OPENVIKING_TIMEOUT_MS")
@@ -111,25 +117,53 @@ class OpenVikingMemoryPlugin:
             logger.warning("openviking-memory: no connection configured; skipping health check")
             return
         url = f"{conn['base_url']}/api/v1/system/status"
+        # Startup hooks run on the install path: a hanging server must not
+        # stall plugin installation, so this probe gets a hard short budget
+        # regardless of the (much longer) per-request tool timeout.
+        timeout_s = min(3.0, max(1.0, float(conn.get("timeout_ms", 15000)) / 1000.0))
         try:
-            request = urllib.request.Request(
-                url,
-                headers=build_ov_headers(conn, actor_peer_id=conn.get("peer_id", "")),
-                method="GET",
-            )
-            # Startup hooks run on the install path: a hanging server must not
-            # stall plugin installation, so this probe gets a hard short budget
-            # regardless of the (much longer) per-request tool timeout.
-            timeout_s = min(3.0, max(1.0, float(conn.get("timeout_ms", 15000)) / 1000.0))
-            with urllib.request.urlopen(request, timeout=timeout_s) as response:
-                body = response.read().decode("utf-8", errors="replace")
-            logger.info("openviking-memory: server healthy at %s: %s", url, body[:300])
+            body = self._probe(url, conn, timeout_s)
         except Exception as exc:
             logger.warning(
                 "openviking-memory: health check failed for %s: %s "
-                "(tools will still retry lazily; check the server and credentials)",
-                url, exc,
+                "(tools will still retry lazily; check the server and credentials)%s",
+                url,
+                exc,
+                self._proxy_diagnosis(url, conn, timeout_s),
             )
+            return
+        logger.info("openviking-memory: server healthy at %s: %s", url, body[:300])
+
+    @staticmethod
+    def _probe(url, conn, timeout_s):
+        request = urllib.request.Request(
+            url,
+            headers=build_ov_headers(conn, actor_peer_id=conn.get("peer_id", "")),
+            method="GET",
+        )
+        with build_ov_opener(conn).open(request, timeout=timeout_s) as response:
+            return response.read().decode("utf-8", errors="replace")
+
+    def _proxy_diagnosis(self, url, conn, timeout_s):
+        """Counter-probe with the proxy policy flipped; '' when inconclusive."""
+        summary = proxy_policy.describe_proxy_env()
+        if not summary:
+            return ""
+        flipped = dict(conn, proxy_bypass=not proxy_policy.resolve_proxy_bypass(conn)["enabled"])
+        try:
+            self._probe(url, flipped, timeout_s)
+        except Exception:
+            return ""
+        if flipped["proxy_bypass"]:
+            return (
+                f" | diagnosis: direct connection succeeds — the environment proxy "
+                f"({summary}) is breaking this request; add the OpenViking host to "
+                f"no_proxy or set OPENVIKING_PROXY_BYPASS=1"
+            )
+        return (
+            f" | diagnosis: the request succeeds through the environment proxy "
+            f"({summary}) but the direct connection fails; set OPENVIKING_PROXY_BYPASS=0"
+        )
 
     def _shutdown(self):
         try:
