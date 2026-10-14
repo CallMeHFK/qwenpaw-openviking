@@ -2,6 +2,8 @@ import io
 import json
 import unittest
 import urllib.error
+import urllib.request
+from typing import ClassVar
 from unittest import mock
 
 from openviking_client import mcp_client
@@ -275,16 +277,25 @@ class SafeRedirectTest(unittest.TestCase):
 
 
 class OpenerWiringTest(unittest.TestCase):
+    # Patch getproxies so the ProxyHandler always registers: with an empty
+    # proxies dict urllib drops the handler from opener.handlers entirely.
+    PROXIES: ClassVar[dict] = {"http": "http://127.0.0.1:7890", "https": "http://127.0.0.1:7890"}
+
     def test_client_opener_bypasses_env_proxy_by_default(self):
-        client = McpClient(dict(CFG))
+        with mock.patch("urllib.request.getproxies", return_value=dict(self.PROXIES)):
+            client = McpClient(dict(CFG))
         self.assertTrue(
             any(isinstance(h, proxy_module._SelectiveProxyHandler) for h in client._opener.handlers)
         )
 
     def test_client_opener_respects_proxy_bypass_false(self):
-        client = McpClient(dict(CFG, proxy_bypass=False))
+        with mock.patch("urllib.request.getproxies", return_value=dict(self.PROXIES)):
+            client = McpClient(dict(CFG, proxy_bypass=False))
         self.assertFalse(
             any(isinstance(h, proxy_module._SelectiveProxyHandler) for h in client._opener.handlers)
+        )
+        self.assertTrue(
+            any(isinstance(h, urllib.request.ProxyHandler) for h in client._opener.handlers)
         )
 
     def test_urlopen_receives_client_opener(self):
