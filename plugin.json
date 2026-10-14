@@ -1,7 +1,7 @@
 {
   "id": "openviking-memory",
   "name": "openviking-memory",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "general",
   "description": "OpenViking semantic long-term memory for QwenPaw agents: recall prior knowledge with find/search/read and persist durable facts with remember/write, backed by an OpenViking server.",
   "description_i18n": {

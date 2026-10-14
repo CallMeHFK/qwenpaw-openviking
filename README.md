@@ -28,10 +28,12 @@ From the latest release zip, hot-installed without restarting QwenPaw:
 ```bash
 curl -X POST http://127.0.0.1:19999/api/plugins/install \
   -H 'Content-Type: application/json' \
-  -d '{"source": "https://github.com/CallMeHFK/qwenpaw-openviking/releases/latest/download/openviking-memory-0.1.0.zip"}'
+  -d '{"source": "https://github.com/CallMeHFK/qwenpaw-openviking/releases/latest/download/openviking-memory-0.2.0.zip"}'
 ```
 
 Or copy the repository into QwenPaw's plugin directory (`~/.qwenpaw/plugins/openviking-memory/`) and install from that path. Either way the plugin loads immediately and runs its startup hook.
+
+The seven tools are registered **disabled by default** — enable the ones you want in QwenPaw's tool settings after install. While the app is running you can also upload the release zip directly (multipart `POST /api/plugins/upload`); with the app stopped, the offline CLI accepts a directory or a zip URL only.
 
 ## Configuration
 

@@ -28,10 +28,12 @@ QwenPaw 插件，把 QwenPaw agent 接入火山引擎开源的 agent 长期语�
 ```bash
 curl -X POST http://127.0.0.1:19999/api/plugins/install \
   -H 'Content-Type: application/json' \
-  -d '{"source": "https://github.com/CallMeHFK/qwenpaw-openviking/releases/latest/download/openviking-memory-0.1.0.zip"}'
+  -d '{"source": "https://github.com/CallMeHFK/qwenpaw-openviking/releases/latest/download/openviking-memory-0.2.0.zip"}'
 ```
 
 也可以把本仓库拷贝到 QwenPaw 插件目录（`~/.qwenpaw/plugins/openviking-memory/`）后从该路径安装。两种方式都会立即加载插件并运行 startup hook。
+
+7 个工具默认 **disabled**——安装后请在 QwenPaw 的工具设置里显式开启需要的那几个。app 在跑时也可以直接上传 release zip（multipart `POST /api/plugins/upload`）；app 停着时离线 CLI 只接受目录或 zip URL。
 
 ## 配置
 
